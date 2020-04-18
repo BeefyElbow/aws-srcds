@@ -1,0 +1,729 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'TF2 Server and Supporting Infrastructure'
+
+## ::METADATA::
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: 'Instance Configuration'
+      Parameters:
+        - AMIId
+        - KeyName
+    - Label:
+        default: 'Network Configuration'
+      Parameters:
+        - VPCCidrBlock
+        - PublicSubnetCidrBlock
+        - HomeManagementIPCidrBlock
+    - Label:
+        default: 'Server Configuration'
+      Parameters:
+        - ServerHostname
+        - ServerPassword
+        # - GameSessionLength
+
+    - Label:
+        default: 'DNS Configuration'
+      Parameters:
+        - DomainName
+        - HostedZoneId
+
+    # LABELS
+    ParameterLabels:
+
+      # Instance Configuration
+      AMIId:
+        default: 'EC2 AMI ID'
+      KeyName:
+        default: 'SSH Key Name'
+
+      # Network Configuration
+      VPCCidrBlock:
+        default: 'IPv4 CIDR block for the VPC'
+      PublicSubnetCidrBlock:
+        default: 'IPv4 CIDR block for the PUBLIC subnet'
+      HomeManagementIPCidrBlock:
+        default: 'IPv4 CIDR block for Home/Management'
+
+      # Server Configuration
+      ServerHostname:
+        default: 'Server Hostname'
+      ServerPassword:
+        default: '(Optional) Server Password'
+      # GameSessionLength:
+      #   default: 'Game Session Length'
+
+      # DNS Configuration
+      DomainName:
+        default: '(Optional) Domain Name for DNS records'
+      HostedZoneId:
+        default: '(Optional) Public Hosted Zone for DNS records'
+
+## ::PARAMETERS::
+Parameters:
+
+  # Instance Configuration
+
+  AMIId:
+    Type: AWS::EC2::Image::Id
+    Description: 'Choose the latest Amazon Linux AMI for your deployment region.'
+
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: 'SSH Keypair. Must already exist.'
+
+  # Network Configuration
+
+  VPCCidrBlock:
+    Type: String
+    MinLength: '9'
+    MaxLength: '18'
+    Default: '10.10.0.0/16'
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: 'Must be a valid IP CIDR range of the form x.x.x.x/x.'
+
+  PublicSubnetCidrBlock:
+    Type: String
+    MinLength: '9'
+    MaxLength: '18'
+    Default: '10.10.1.0/24'
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: 'Must be a valid IP CIDR range of the form x.x.x.x/x. Must be a valid subnet of the VPC CIDR block.'
+
+  HomeManagementIPCidrBlock:
+    Type: String
+    MinLength: '9'
+    MaxLength: '18'
+    Default: '0.0.0.0/32'
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: 'Must be a valid IP CIDR range of the form x.x.x.x/x. Must be a valid subnet of the VPC CIDR block.'
+
+  # Server Configuration
+  ServerHostname:
+    Type: String
+    Description: 'Hostname of the Server (appears in server browser)'
+    Default: 'My Awesome TF2 Server'
+
+  ServerPassword:
+    Type: String
+    Description: 'If provided, used as server password. No password if not.'
+    Default: ''
+
+  # GameSessionLength:
+  #   Type: Number
+  #   Description: 'Length of time (in minutes) for the game session. Server is termiated after expiry.'
+  #   AllowedValues:
+  #     - 60
+  #     - 120
+  #     - 180
+  #     - 240
+  #     - 300
+  #     - 360
+  #   Default: 60
+
+  # DNS Configuration
+
+  DomainName:
+    Type: String
+    Description: 'If supplied, HostedZoneId must also be supplied, then DNS records are created in the hosted zone.'
+    Default: ''
+
+  HostedZoneId:
+    Type: String
+    Description: 'If supplied, DomainName must also be supplied, then DNS records are created in the hosted zone.'
+    Default: ''
+
+## ::MAPPINGS::
+Mappings: {}
+
+## ::CONDITIONS::
+Conditions:
+  ShouldCreateDNSRecords: !And [ !Not [ !Equals [ !Ref DomainName, '' ] ], !Not [ !Equals [ !Ref HostedZoneId, '' ] ] ]
+  ShouldUsePassword: !Not [ !Equals [ !Ref ServerPassword, '' ] ]
+
+## ::RESOURCES::
+Resources:
+
+#--
+  # ----------------------------------
+  # GENERAL VPC
+  # ----------------------------------
+#--
+
+  # VPC Itself
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref 'VPCCidrBlock'
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      InstanceTenancy: default
+      Tags:
+        - Key: 'Name'
+          Value: 'tf2.vpc'
+#--
+  # ----------------------------------
+  # GATEWAY ATTACHMENTS
+  # ----------------------------------
+#--
+
+  # Internet Gateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: 'Name'
+          Value: 'tf2.igw'
+
+  # Internet Gateway Attachment
+  IGWAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref 'VPC'
+      InternetGatewayId: !Ref 'InternetGateway'
+
+#--
+  # ----------------------------------
+  #  SUBNETS
+  # ----------------------------------
+#--
+
+  # PUBLIC
+
+#--
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    DependsOn: InternetGateway
+    Properties:
+      VpcId: !Ref 'VPC'
+      Tags:
+        - Key: 'Name'
+          Value: 'tf2.public.route-table'
+
+  PublicRouteToInternet:
+    Type: AWS::EC2::Route
+    DependsOn: IGWAttachment
+    Properties:
+      RouteTableId: !Ref 'PublicRouteTable'
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref 'InternetGateway'
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'VPC'
+      CidrBlock: !Ref 'PublicSubnetCidrBlock'
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: 'Name'
+          Value: 'tf2.public.subnet'
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'PublicSubnet'
+      RouteTableId: !Ref 'PublicRouteTable'
+
+#--
+  #----------------------------------
+  # SECURITY GROUPS
+  #----------------------------------
+#--
+
+  # Security Group
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub 'Security Group for TF2 Server'
+      SecurityGroupIngress:
+        # - FromPort: 27015
+        #   ToPort: 27015
+        #   IpProtocol: 'tcp'
+        #   CidrIp: 0.0.0.0/0
+        - FromPort: 27015
+          ToPort: 27015
+          IpProtocol: 'udp'
+          CidrIp: 0.0.0.0/0
+        - FromPort: 27020
+          ToPort: 27020
+          IpProtocol: 'udp'
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          FromPort: 0
+          ToPort: 65535
+          IpProtocol: 'tcp'
+        - CidrIp: 0.0.0.0/0
+          FromPort: 0
+          ToPort: 65535
+          IpProtocol: 'udp'
+      VpcId: !Ref VPC
+      Tags:
+        - Key: 'Name'
+          Value: 'tf2.sg'
+
+  # Management Security Group
+  ManagementSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: 'Management Security Group for TF2 Server'
+      SecurityGroupIngress:
+        - FromPort: 22
+          ToPort: 22
+          IpProtocol: 'tcp'
+          CidrIp: !Ref HomeManagementIPCidrBlock
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          FromPort: 0
+          ToPort: 65535
+          IpProtocol: 'tcp'
+      VpcId: !Ref VPC
+      Tags:
+        - Key: 'Name'
+          Value: 'tf2.mgmt-sg'
+
+#--
+  #----------------------------------
+  # INSTANCE
+  #----------------------------------
+#--
+
+  # Instance Launch Template
+  InstanceLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Metadata:
+
+      # Instance Initialisation
+      AWS::CloudFormation::Init:
+        configSets:
+          default:
+            - 'do_aws_bootstrapping'
+            - 'install_prereqs'
+            - 'configure_server'
+            - 'create_run_server_script'
+            - !If
+              - ShouldUsePassword
+              - 'add_server_password'
+              - !Ref AWS::NoValue
+            - 'configure_and_start_service'
+            - 'finalise'
+        do_aws_bootstrapping:
+        # ----------------------------------
+          files:
+            /etc/cfn/cfn-hup.conf:
+              mode: "000400"
+              owner: root
+              group: root
+              content: !Sub |
+                [main]
+                stack=${AWS::StackId}
+                region=${AWS::Region}
+                interval=1
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+              content: !Sub |
+                [cfn-auto-reloader-hook]
+                triggers=post.update
+                path=Resources.InstanceLaunchTemplate.Metadata.AWS::CloudFormation::Init
+                action=/opt/aws/bin/cfn-init -v --region ${AWS::Region} --stack ${AWS::StackName} --resource InstanceLaunchTemplate runas=root
+          services:
+            sysvinit:
+              cfn-hup:
+                enabled: true
+                ensureRunning: true
+                files:
+                  - /etc/cfn/cfn-hup.conf
+                  - /etc/cfn/hooks.d/cfn-auto-reloader.conf
+
+        install_prereqs:
+        # ----------------------------------
+          files:
+            /opt/install_tf2_prereqs.sh:
+              mode: "000777"
+              owner: root
+              group: root
+              content: !Sub |
+                #!/bin/bash -xe
+
+                yum install -y ncompress libgcc.x86_64 libgcc.i686 glibc.i686 zlib.i686 ncurses-libs.i686 libstdc++.i686 libcurl.i686 libnss-resolve:i386
+
+                ln -s /usr/lib/libcurl.so.4 /usr/lib/libcurl-gnutls.so.4
+
+                adduser gameserver
+
+                mkdir /opt/tf2server
+
+                cd /opt/tf2server
+
+                wget https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz
+
+                tar zxf steamcmd_linux.tar.gz
+
+                ./steamcmd.sh +login anonymous +force_install_dir ./hlserver +app_update 232250 +quit
+          commands:
+            a-install-prereqs:
+              command: !Sub |
+                /opt/install_tf2_prereqs.sh
+
+        configure_server:
+        # ----------------------------------
+          files:
+            /opt/tf2server/hlserver/steam_appid.txt:
+              mode: "000444"
+              owner: root
+              group: root
+              content: !Sub |
+                232250
+
+            /opt/tf2server/hlserver/tf/cfg/server.cfg:
+              mode: "000666"
+              owner: root
+              group: root
+              content: !Sub |
+                // General Settings //
+
+                // Hostname for server.
+                hostname "${ServerHostname}"
+
+                // Overrides the max players reported to prospective clients
+                sv_visiblemaxplayers 24
+
+                // Maximum number of rounds to play before server changes maps
+                mp_maxrounds 3
+
+                // Set to lock per-frame time elapse
+                host_framerate 0
+
+                // Set the pause state of the server
+                setpause 0
+
+                // Control where the client gets content from
+                // 0 = anywhere, 1 = anywhere listed in white list, 2 = steam official content only
+                sv_pure 2
+
+                // Is the server pausable
+                sv_pausable 0
+
+                // Type of server 0=internet 1=lan
+                sv_lan 0
+
+                // Collect CPU usage stats
+                sv_stats 1
+
+                // Execute Banned Users //
+                exec banned_user.cfg
+                exec banned_ip.cfg
+                writeid
+                writeip
+
+                // Contact & Region //
+
+                // Contact email for server sysop
+                sv_contact domdriver@hotmail.com
+
+                // The region of the world to report this server in.
+                // -1 is the world, 0 is USA east coast, 1 is USA west coast
+                // 2 south america, 3 europe, 4 asia, 5 australia, 6 middle east, 7 africa
+                sv_region 5
+
+
+                // Rcon Settings //
+
+                // Password for rcon authentication (Remote CONtrol)
+                rcon_password BEEFYelbow
+
+                // Number of minutes to ban users who fail rcon authentication
+                sv_rcon_banpenalty 1440
+
+                // Max number of times a user can fail rcon authentication before being banned
+                sv_rcon_maxfailures 5
+
+
+
+                // Log Settings //
+
+                // Enables logging to file, console, and udp < on | off >.
+                log on
+
+                // Log server information to only one file.
+                sv_log_onefile 0
+
+                // Log server information in the log file.
+                sv_logfile 1
+
+                // Log server bans in the server logs.
+                sv_logbans 1
+
+                // Echo log information to the console.
+                sv_logecho 1
+
+
+
+                // Rate Settings //
+
+                // Frame rate limiter
+                fps_max 600
+
+                // Min bandwidth rate allowed on server, 0 == unlimited
+                sv_minrate 0
+
+                // Max bandwidth rate allowed on server, 0 == unlimited
+                sv_maxrate 20000
+
+                // Minimum updates per second that the server will allow
+                sv_minupdaterate 10
+
+                // Maximum updates per second that the server will allow
+                sv_maxupdaterate 66
+
+
+
+                // Download Settings //
+
+                // Allow clients to upload customizations files
+                sv_allowupload 0
+
+                // Allow clients to download files
+                sv_allowdownload 1
+
+                // Maximum allowed file size for uploading in MB
+                net_maxfilesize 15
+
+
+
+                // Team Balancing //
+
+                // Enable team balancing
+                mp_autoteambalance 1
+
+                // Teams are unbalanced when one team has this many more players than the other team. (0 disables check)
+                mp_teams_unbalance_limit 1
+
+
+
+                // Round and Game Times //
+
+                // Enable timers to wait between rounds. WARNING: Setting this to 0 has been known to cause a bug with setup times lasting 5:20 (5 minutes 20 seconds) on some servers!
+                mp_enableroundwaittime 1
+
+                // Time after round win until round restarts
+                mp_bonusroundtime 8
+
+                // If non-zero, the current round will restart in the specified number of seconds
+                mp_restartround 0
+
+                // Enable sudden death
+                mp_stalemate_enable 1
+
+                // Timelimit (in seconds) of the stalemate round.
+                mp_stalemate_timelimit 300
+
+                // Game time per map in minutes
+                mp_timelimit 35
+
+
+
+                // Client CVars //
+
+                // Restricts spectator modes for dead players
+                mp_forcecamera 0
+
+                // Toggles whether the server allows spectator mode or not
+                mp_allowspectators 1
+
+                // Toggles footstep sounds
+                mp_footsteps 1
+
+                // Toggles game cheats
+                sv_cheats 0
+
+                // After this many seconds without a message from a client, the client is dropped
+                sv_timeout 900
+
+                // Maximum time a player is allowed to be idle (in minutes), made this and sv_timeout equal same time?
+                mp_idlemaxtime 15
+
+                // Deals with idle players 1=send to spectator 2=kick
+                mp_idledealmethod 2
+
+                // Time (seconds) between decal sprays
+                decalfrequency 30
+
+
+
+                // Communications //
+
+                // enable voice communications
+                sv_voiceenable 1
+
+                // Players can hear all other players, no team restrictions 0=off 1=on
+                sv_alltalk 0
+
+                // Amount of time players can chat after the game is over
+                mp_chattime 10
+
+                // Enable party mode
+                tf_birthday 0
+
+        create_run_server_script:
+        # ----------------------------------
+          files:
+            /opt/tf2server/run_server.sh:
+              mode: "000777"
+              owner: root
+              group: root
+              content: !Sub |
+                #!/bin/sh
+                /opt/tf2server/hlserver/srcds_run -console -game tf +sv_pure 2 +randommap +maxplayers 24 +sv_lan 0
+
+        add_server_password:
+        # ----------------------------------
+          commands:
+            a-add-comment:
+              command: "printf '\n\n// Password' >> /opt/tf2server/hlserver/tf/cfg/server.cfg"
+            a-add-password:
+              command: !Sub "printf '\nsv_password \"${ServerPassword}\"' >> /opt/tf2server/hlserver/tf/cfg/server.cfg"
+
+        configure_and_start_service:
+        # ----------------------------------
+          files:
+            /etc/systemd/system/tf2server.service:
+              mode: "000444"
+              owner: root
+              group: root
+              content: !Sub |
+                [Unit]
+                Description=Team Fortress 2 server
+                RefuseManualStart=no
+                RefuseManualStop=no
+
+                [Service]
+                Type=oneshot
+                ExecStart=/bin/sh /opt/tf2server/run_server.sh
+
+                [Install]
+                WantedBy=multi-user.target
+
+          commands:
+            a-refresh-service-config:
+              command: "systemctl daemon-reload"
+
+            b-start-on-boot:
+              command: "systemctl enable tf2server.service"
+
+        finalise:
+        # ----------------------------------
+          commands:
+            a-signal-success:
+              command: !Sub |
+                /opt/aws/bin/cfn-signal -e $? --region ${AWS::Region} --stack ${AWS::StackName} --resource AppInstance
+    Properties:
+      LaunchTemplateData:
+        BlockDeviceMappings:
+          - DeviceName: '/dev/xvda'
+            Ebs:
+              VolumeType: 'gp2'
+              DeleteOnTermination: true
+              VolumeSize: 32
+        DisableApiTermination: False
+        EbsOptimized: True
+        IamInstanceProfile:
+          Name: !Ref InstanceProfile
+        ImageId: !Ref AMIId
+        InstanceType: m5.large
+        # InstanceMarketOptions:
+        #   MarketType: spot
+        #   SpotOptions:
+        #     BlockDurationMinutes: !Ref GameSessionLength
+        #     InstanceInterruptionBehavior: terminate
+        #     MaxPrice: '0.12'
+        #     SpotInstanceType: one-time
+        KeyName: !Ref KeyName
+        SecurityGroupIds:
+          - !GetAtt SecurityGroup.GroupId
+          - !GetAtt ManagementSecurityGroup.GroupId
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: 'tf2.instance'
+          - ResourceType: volume
+            Tags:
+              - Key: Name
+                Value: 'tf2.instance-volume'
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash -xe
+            /opt/aws/bin/cfn-init -v --region ${AWS::Region} --stack ${AWS::StackName} --resource InstanceLaunchTemplate
+            systemctl start tf2server &
+
+  # App Instance
+  AppInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref InstanceLaunchTemplate
+        Version: !GetAtt InstanceLaunchTemplate.LatestVersionNumber
+      SubnetId: !Ref PublicSubnet
+      Tags:
+        - Key: Name
+          Value: 'tf2.instance'
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: "PT30M"
+
+#--
+  #----------------------------------
+  # INSTANCE ROLE/PROFILE
+  #----------------------------------
+#--
+  # Role to enable the EC2 Instances to do their thing
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+
+  # Instance Profile
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref InstanceRole
+
+#--
+  #----------------------------------
+  # ROUTE 53
+  #----------------------------------
+#--
+
+  # R53 RECORD SET
+  RecordSet:
+    Type: AWS::Route53::RecordSet
+    Condition: ShouldCreateDNSRecords
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub 'tf2.${DomainName}'
+      ResourceRecords:
+      - !GetAtt 'AppInstance.PublicIp'
+      TTL: 60
+      Type: A
+
+## ::OUTPUTS::
+Outputs:
+
+  TemplateID:
+    Description: 'Template ID'
+    Value: 'tf2'
+
+  StackName:
+    Description: 'Stack name'
+    Value: !Sub '${AWS::StackName}'
