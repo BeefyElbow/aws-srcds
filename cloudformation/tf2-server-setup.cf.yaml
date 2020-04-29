@@ -8,8 +8,8 @@ Metadata:
     - Label:
         default: 'Instance Configuration'
       Parameters:
-        - AMIId
         - KeyName
+        - InstanceType
     - Label:
         default: 'Network Configuration'
       Parameters:
@@ -33,10 +33,10 @@ Metadata:
     ParameterLabels:
 
       # Instance Configuration
-      AMIId:
-        default: 'EC2 AMI ID'
       KeyName:
         default: 'SSH Key Name'
+      InstanceType:
+        default: 'EC2 Instance Type'
 
       # Network Configuration
       VPCCidrBlock:
@@ -65,13 +65,14 @@ Parameters:
 
   # Instance Configuration
 
-  AMIId:
-    Type: AWS::EC2::Image::Id
-    Description: 'Choose the latest Amazon Linux AMI for your deployment region.'
-
   KeyName:
     Type: AWS::EC2::KeyPair::KeyName
     Description: 'SSH Keypair. Must already exist.'
+
+  InstanceType:
+    Type: String
+    Description: 'EC2 instance type. The default should do you.'
+    Default: 'm5.large'
 
   # Network Configuration
 
@@ -135,7 +136,49 @@ Parameters:
     Default: ''
 
 ## ::MAPPINGS::
-Mappings: {}
+Mappings:
+
+  AMILookup:
+    us-east-1:
+      "HVM64": 'ami-0323c3dd2da7fb37d'
+    us-east-2:
+      "HVM64": 'ami-0f7919c33c90f5b58'
+    us-west-1:
+      "HVM64": 'ami-06fcc1f0bc2c8943f'
+    us-west-2:
+      "HVM64": 'ami-0d6621c01e8c2de2c'
+    # af-south-1:
+    # ap-east-1:
+    ap-south-1:
+      "HVM64": 'ami-0470e33cd681b2476'
+    ap-northeast-2:
+      "HVM64": 'ami-01288945bd24ed49a'
+    ap-southeast-1:
+      "HVM64": 'ami-0ec225b5e01ccb706'
+    ap-southeast-2:
+      "HVM64": 'ami-0970010f37c4f9c8d'
+    ap-northeast-1:
+      "HVM64": 'ami-0f310fced6141e627'
+    ca-central-1:
+      "HVM64": 'ami-054362537f5132ce2'
+    # cn-north-1:
+    # cn-northwest-1:
+    eu-central-1:
+      "HVM64": 'ami-076431be05aaf8080'
+    eu-west-1:
+      "HVM64": 'ami-06ce3edf0cff21f07'
+    eu-west-2:
+      "HVM64": 'ami-01a6e31ac994bbc09'
+    # eu-south-1: ''
+    eu-west-3:
+      "HVM64": 'ami-00077e3fed5089981'
+    eu-north-1:
+      "HVM64": 'ami-0b7a46b4bd694e8a6'
+    # me-south-1:
+    sa-east-1:
+      "HVM64": 'ami-003449ffb2605a74c'
+    # us-gov-east-1:
+    # us-gov-west-1:
 
 ## ::CONDITIONS::
 Conditions:
@@ -630,8 +673,8 @@ Resources:
         EbsOptimized: True
         IamInstanceProfile:
           Name: !Ref InstanceProfile
-        ImageId: !Ref AMIId
-        InstanceType: m5.large
+        ImageId: !FindInMap [AMILookup, !Ref 'AWS::Region', 'HVM64']
+        InstanceType: !Ref InstanceType
         # InstanceMarketOptions:
         #   MarketType: spot
         #   SpotOptions:
