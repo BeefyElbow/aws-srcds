@@ -37,24 +37,38 @@ In order to get up and running, you need to [create a cloudformation stack](http
 1. Sign in to your AWS Account.
 
 2. Navigate to the Cloudformation Service page by typing _Cloudformation_ into the **Find Services** box. Click the link that appears beneath your typed text.
+![Step 2](images/aws-console-start.png)
 
-3. a) If this is your first time creating a Cloudformation stack in this AWS account, you'll be greeted with the CloudFormation service homepage. Click the orange button titled _Create stack_. b) If you've created other stacks previously, you'll be greeted with a list of your existing Cloudformation stacks. Click the _Create stack_ button at the top-right, then select _With new resources (standard)_ from the drop-down.
+3. a) If this is your first time creating a Cloudformation stack in this AWS account, you'll be greeted with the CloudFormation service homepage. Click the orange button titled _Create stack_.
+![Step 3a](images/aws-console-cfn-1st.png)
+
+b) If you've created other stacks previously, you'll be greeted with a list of your existing Cloudformation stacks. Click the _Create stack_ button at the top-right, then select _With new resources (standard)_ from the drop-down.
+![Step 3b](images/aws-console-cfn.png)
 
 4. On the resulting page, firstly click the _Upload a template file_ option. This will display the _Choose file_ button, which you'll need to click. Navigate to the location of the template file and select it. Once done, an auto-generated S3 URL will be displayed in the bottom of the screen. Click the orange button labelled _Next_
+![Step 4](images/aws-console-cfn-create-stack.png)
 
-5. This page allows you to specify a stack name and template parameters. The only thing that's **required** is the _Stack name_, which you can enter at the top of the screen. Note the limits on characters that can be used (i.e. no spaces).
+5. This page allows you to specify a stack name and template parameters. The only thing that's **required** is the _Stack name_, which you must enter at the top of the screen. Note the limits on characters that can be used (i.e. no spaces).
+![Step 5](images/aws-console-cfn-create-stack-params.png)
 
 6. (Optional) You might also want to provide a different value for the _Server Hostname_ parameter. This is what appears in the TF2 server browser. If you don't want this to be a public server, provide a _Server password_. Don't get too fancy with this - I haven't done extensive testing on which characters are allowed and whether use of non-alphanumerics will break my dodgy bash scripts ;)
 
 7. Once you've provided a server name and optional parameters, click the orange _Next_ button.
 
 8. The next page is the _Configure stack options_ page. Scroll to the bottom and hit the orange _Next_ button.
+![Step 8](images/aws-console-cfn-create-stack-config.png)
 
 9. The next page is the _Review Stack_ page. Scroll to the bottom and check the checkbox in the blue-highlighted section labelled _I acknowledge that AWS CloudFormation might create IAM resources._. **you must check this box or stack creation will fail**. Once you've checked the box, hit the orange _Create Stack_ button.
+![Step 9](images/aws-console-cfn-create-stack-review.png)
 
-10. You'll be navigated to the stack page, and your stack will be highlighted with the status CREATE_IN_PROGRESS. If you're super-keen, you can repeatedly click the refresh button on the right in order to track the creation progress of each resource defined in the stack. Eventually, after about 6 minutes, stack creation will complete, and the state will change to CREATE_COMPLETE in green with a little check mark. This is a happy place to be.
+10. You'll be directed to the stack page, and your stack will be highlighted with the status CREATE_IN_PROGRESS. If you're super-keen, you can repeatedly click the refresh button on the right in order to track the creation progress of each resource defined in the stack.
+![Step 10a](images/aws-console-cfn-create-stack-progress.png)
+
+Eventually, after about 6 minutes, stack creation will complete, and the state will change to CREATE_COMPLETE in green with a little check mark. This is a happy place to be.
+![Step 10b](images/aws-console-cfn-create-stack-complete.png)
 
 11. Click the _outputs_ tab to view the outputs of this stack. One of the outputs is the **ServerHostname**. This is what appears in the server browser in-game. If you've kept the default, it'll be _My Awesome TF2 Server_. If, for some reason, you can't see your server in the server browser, you can connect directly using the public IP address. This is presented as the _PublicIPAddress_ output value.
+![Step 11](images/aws-console-cfn-create-stack-outputs.png)
 
 # Detailed Setup
 _coming soon_
