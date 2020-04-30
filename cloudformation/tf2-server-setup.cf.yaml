@@ -8,8 +8,9 @@ Metadata:
     - Label:
         default: 'Instance Configuration'
       Parameters:
-        - KeyName
         - InstanceType
+        - LatestAmiId
+        - KeyName
     - Label:
         default: 'Network Configuration'
       Parameters:
@@ -33,10 +34,12 @@ Metadata:
     ParameterLabels:
 
       # Instance Configuration
-      KeyName:
-        default: 'SSH Key Name'
       InstanceType:
         default: 'EC2 Instance Type'
+      LatestAmiId:
+        default: '(SSM Param) AMI Image ID'
+      KeyName:
+        default: '(Optional) SSH Key Name'
 
       # Network Configuration
       VPCCidrBlock:
@@ -65,14 +68,20 @@ Parameters:
 
   # Instance Configuration
 
-  KeyName:
-    Type: AWS::EC2::KeyPair::KeyName
-    Description: 'SSH Keypair. Must already exist.'
-
   InstanceType:
     Type: String
     Description: 'EC2 instance type. The default should do you.'
     Default: 'm5.large'
+
+  LatestAmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+    Description: 'Public parameter indicating the AMI ID to use. Defaults to latest available Amazon Linux 2.'
+
+  KeyName:
+    Type: String
+    Description: "EC2 Keypair name. If provided, this keypair is used for SSH access to the instance. If omitted, you can't use SSH to administer the instance."
+    Default: ''
 
   # Network Configuration
 
@@ -136,52 +145,11 @@ Parameters:
     Default: ''
 
 ## ::MAPPINGS::
-Mappings:
-
-  AMILookup:
-    us-east-1:
-      "HVM64": 'ami-0323c3dd2da7fb37d'
-    us-east-2:
-      "HVM64": 'ami-0f7919c33c90f5b58'
-    us-west-1:
-      "HVM64": 'ami-06fcc1f0bc2c8943f'
-    us-west-2:
-      "HVM64": 'ami-0d6621c01e8c2de2c'
-    # af-south-1:
-    # ap-east-1:
-    ap-south-1:
-      "HVM64": 'ami-0470e33cd681b2476'
-    ap-northeast-2:
-      "HVM64": 'ami-01288945bd24ed49a'
-    ap-southeast-1:
-      "HVM64": 'ami-0ec225b5e01ccb706'
-    ap-southeast-2:
-      "HVM64": 'ami-0970010f37c4f9c8d'
-    ap-northeast-1:
-      "HVM64": 'ami-0f310fced6141e627'
-    ca-central-1:
-      "HVM64": 'ami-054362537f5132ce2'
-    # cn-north-1:
-    # cn-northwest-1:
-    eu-central-1:
-      "HVM64": 'ami-076431be05aaf8080'
-    eu-west-1:
-      "HVM64": 'ami-06ce3edf0cff21f07'
-    eu-west-2:
-      "HVM64": 'ami-01a6e31ac994bbc09'
-    # eu-south-1: ''
-    eu-west-3:
-      "HVM64": 'ami-00077e3fed5089981'
-    eu-north-1:
-      "HVM64": 'ami-0b7a46b4bd694e8a6'
-    # me-south-1:
-    sa-east-1:
-      "HVM64": 'ami-003449ffb2605a74c'
-    # us-gov-east-1:
-    # us-gov-west-1:
+Mappings: {}
 
 ## ::CONDITIONS::
 Conditions:
+  ShouldUseKeyPair: !Not [ !Equals [ !Ref KeyName, '' ] ]
   ShouldCreateDNSRecords: !And [ !Not [ !Equals [ !Ref DomainName, '' ] ], !Not [ !Equals [ !Ref HostedZoneId, '' ] ] ]
   ShouldUsePassword: !Not [ !Equals [ !Ref ServerPassword, '' ] ]
 
@@ -673,7 +641,7 @@ Resources:
         EbsOptimized: True
         IamInstanceProfile:
           Name: !Ref InstanceProfile
-        ImageId: !FindInMap [AMILookup, !Ref 'AWS::Region', 'HVM64']
+        ImageId: !Ref LatestAmiId
         InstanceType: !Ref InstanceType
         # InstanceMarketOptions:
         #   MarketType: spot
@@ -682,7 +650,10 @@ Resources:
         #     InstanceInterruptionBehavior: terminate
         #     MaxPrice: '0.12'
         #     SpotInstanceType: one-time
-        KeyName: !Ref KeyName
+        KeyName: !If
+          - ShouldUseKeyPair
+          - !Ref KeyName
+          - !Ref 'AWS::NoValue'
         SecurityGroupIds:
           - !GetAtt SecurityGroup.GroupId
           - !GetAtt ManagementSecurityGroup.GroupId
@@ -770,3 +741,11 @@ Outputs:
   StackName:
     Description: 'Stack name'
     Value: !Sub '${AWS::StackName}'
+
+  PublicIPAddress:
+    Description: 'Public IP address of the TF2 server. You can connect directly to this IP in-game.'
+    Value: !GetAtt 'AppInstance.PublicIp'
+
+  ServerHostname:
+    Description: 'Hostname of the TF2 server. This will appear in the in-game server browser.'
+    Value: !Ref ServerHostname
